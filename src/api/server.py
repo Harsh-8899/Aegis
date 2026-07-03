@@ -476,6 +476,28 @@ async def live_intelligence_loop():
     except Exception as e:
         logger.error(f"Warmup failed: {e}")
 
+    # Warm up LiveFeatureEngine with the most recent 150 XAUUSD candles from database
+    try:
+        past_candles = db.query(MarketData).filter_by(symbol="XAUUSD", timeframe="1m").order_by(MarketData.timestamp.desc()).limit(150).all()
+        if past_candles:
+            past_candles.reverse()
+            logger.info(f"Warming up LiveFeatureEngine with {len(past_candles)} historical candles from database...")
+            for candle in past_candles:
+                ts_str = candle.timestamp.isoformat() if hasattr(candle.timestamp, 'isoformat') else str(candle.timestamp)
+                mock_tick = {
+                    "timestamp": ts_str,
+                    "symbol": "XAUUSD",
+                    "price": float(candle.close),
+                    "bid": float(candle.bid or candle.close - 0.15),
+                    "ask": float(candle.ask or candle.close + 0.15),
+                    "spread": float((candle.ask or candle.close + 0.15) - (candle.bid or candle.close - 0.15)),
+                    "volume": float(candle.volume or 0.0)
+                }
+                feature_engine.update(mock_tick)
+            logger.info("LiveFeatureEngine warmup complete.")
+    except Exception as e:
+        logger.error(f"Failed to warm up LiveFeatureEngine on startup: {e}")
+
     logger.info("Live Quant Intelligence Loop running.")
     
     while True:

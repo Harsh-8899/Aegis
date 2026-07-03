@@ -14,7 +14,19 @@ from src.config import load_config
 cfg = load_config()
 
 if cfg.database.url.startswith("sqlite"):
-    engine = create_engine(cfg.database.url, connect_args={"check_same_thread": False})
+    db_url = cfg.database.url
+    # Resolve relative paths like sqlite:///./quant_trading.db to project root
+    if "sqlite:///./" in db_url:
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parent.parent.parent
+        db_file = db_url.replace("sqlite:///./", "")
+        db_url = f"sqlite:///{project_root}/{db_file}"
+    elif "sqlite:///" in db_url and not db_url.startswith("sqlite:////"):
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parent.parent.parent
+        db_file = db_url.replace("sqlite:///", "")
+        db_url = f"sqlite:///{project_root}/{db_file}"
+    engine = create_engine(db_url, connect_args={"check_same_thread": False})
 else:
     engine = create_engine(
         cfg.database.url,
