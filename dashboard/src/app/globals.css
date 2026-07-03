@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+:root {
+  --background: #08080c;
+  --foreground: #f3f4f6;
+  --panel-bg: rgba(16, 16, 24, 0.65);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --gold-primary: #d4af37;
+  --gold-gradient: linear-gradient(135deg, #f3e5ab 0%, #d4af37 50%, #aa7c11 100%);
+  --green-glow: #10b981;
+  --red-glow: #ef4444;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel-bg: var(--panel-bg);
+  --color-panel-border: var(--panel-border);
+  --color-gold: var(--gold-primary);
+  --color-green-glow: var(--green-glow);
+  --color-red-glow: var(--red-glow);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  background-image: 
+    radial-gradient(at 10% 20%, rgba(212, 175, 55, 0.03) 0px, transparent 50%),
+    radial-gradient(at 90% 80%, rgba(16, 24, 48, 0.2) 0px, transparent 50%);
+  min-height: 100vh;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gold-primary);
+}
+
+/* Glassmorphism details */
+.glass-panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s ease-in-out;
+}
+
+.glass-panel:hover {
+  border-color: rgba(212, 175, 55, 0.18);
+  box-shadow: 0 4px 30px rgba(212, 175, 55, 0.02);
+}

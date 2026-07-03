@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# Database files
+*.db
+*.sqlite3
+quant_trading.db
+test.db
+test_inference.db
+
+# Pytest
+.pytest_cache/
+
+# ML models registry local stores
+models_store/
+mlruns/
+
+# Next.js / Frontend builds
+node_modules/
+.next/
+out/
+build/
+dist/
+.DS_Store

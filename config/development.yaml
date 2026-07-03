@@ -1,0 +1,52 @@
+system:
+  environment: "development"
+  log_level: "INFO"
+  shutdown_on_risk_breach: true
+
+database:
+  url: "sqlite:///./quant_trading.db"
+  pool_size: 5
+  max_overflow: 10
+
+redis:
+  host: "localhost"
+  port: 6339
+  db: 0
+
+broker:
+  provider: "simulated"
+  api_key: "dev_mock_key"
+  api_secret: "dev_mock_secret"
+  base_url: "http://localhost:8000/mock-broker"
+  symbol: "XAUUSD"
+  min_lot_size: 0.01
+  max_lot_size: 5.0
+  leverage: 10.0
+
+risk:
+  max_daily_loss_pct: 0.02
+  max_weekly_loss_pct: 0.05
+  max_monthly_loss_pct: 0.10
+  max_position_exposure_pct: 3.0
+  max_drawdown_pct: 0.08
+  var_95_limit: 5000.0
+  slippage_buffer_pips: 3.0
+  emergency_shutdown_key: "dev_emergency_override_key"
+
+portfolio:
+  allocation_method: "risk_parity"
+  rebalance_frequency: "daily"
+  strategies:
+    mean_reversion: 0.3
+    trend_following: 0.4
+    breakout: 0.2
+    session_range: 0.1
+
+ml_registry:
+  mlflow_tracking_uri: "http://localhost:5000"
+  model_dir: "./models_store"
+  drift_threshold_ks: 0.05
+  min_precision: 0.55
+
+goldapi:
+  key: "goldapi-065303dbfd3379c140c026c78e27b057-io"
