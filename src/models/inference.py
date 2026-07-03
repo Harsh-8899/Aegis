@@ -2,7 +2,17 @@ import logging
 import numpy as np
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
-from src.models.math_models import KalmanFilterPriceTracker, GARCHVolatilityForecaster, HiddenMarkovModel
+from src.models.math_models import (
+    KalmanFilterPriceTracker,
+    GARCHVolatilityForecaster,
+    HiddenMarkovModel,
+    AutoRegressiveModel,
+    BayesianUncertaintyEstimator,
+    MonteCarloPathSimulator,
+    ZScoreMeanReversionModel,
+    MomentumOscillatorModel,
+    BreakoutProbabilityModel
+)
 from src.models.registry import ModelRegistryManager
 
 logger = logging.getLogger("QuantIntelligence")
@@ -21,6 +31,12 @@ class QuantIntelligenceEngine:
         self.kalman = KalmanFilterPriceTracker(process_noise=0.02, measurement_noise=0.2)
         self.garch = GARCHVolatilityForecaster()
         self.hmm = HiddenMarkovModel()
+        self.ar = AutoRegressiveModel()
+        self.bayesian = BayesianUncertaintyEstimator()
+        self.monte_carlo = MonteCarloPathSimulator()
+        self.zscore_mr = ZScoreMeanReversionModel()
+        self.momentum_osc = MomentumOscillatorModel()
+        self.breakout = BreakoutProbabilityModel()
         
         # Volatility EWMA parameter
         self.ewma_decay = 0.94
@@ -53,21 +69,9 @@ class QuantIntelligenceEngine:
         outputs = {}
 
         # 1. Kalman Filter
-        filtered_price = self.kalman.update(price)
-        kalman_diff = price - filtered_price
-        # Buy if price is above filtered trend, sell if below
-        kalman_buy = 0.8 if kalman_diff > 0.05 else 0.1
-        kalman_sell = 0.8 if kalman_diff < -0.05 else 0.1
-        kalman_hold = 1.0 - (kalman_buy + kalman_sell)
-        outputs["kalman"] = {
-            "buy_prob": kalman_buy,
-            "sell_prob": kalman_sell,
-            "hold_prob": kalman_hold,
-            "confidence": 0.75,
-            "expected_volatility": volatility,
-            "current_regime": "UPTREND" if kalman_diff > 0 else "DOWNTREND",
-            "reason_codes": ["KALMAN_TREND_ABOVE"] if kalman_diff > 0 else ["KALMAN_TREND_BELOW"]
-        }
+        outputs["kalman"] = self.kalman.predict(
+            price=price, returns=rets_arr, z_score=z_score, momentum=momentum, bb_pos=bb_pos, volatility=volatility
+        )
 
         # 2. EWMA Volatility
         if len(rets_arr) > 0:
@@ -78,131 +82,47 @@ class QuantIntelligenceEngine:
             "buy_prob": 0.33, "sell_prob": 0.33, "hold_prob": 0.34,
             "confidence": 0.60,
             "expected_volatility": ewma_vol,
+            "expected_move": 0.0,
             "current_regime": "HIGH_VOL" if ewma_vol > 0.001 else "LOW_VOL",
             "reason_codes": ["EWMA_VOL_UPDATED"]
         }
 
         # 3. GARCH Volatility Forecast
-        garch_vol = volatility
-        try:
-            if len(rets_arr) >= 30:
-                garch_var = self.garch.forecast_next_variance(rets_arr)
-                garch_vol = np.sqrt(garch_var)
-        except Exception as e:
-            logger.debug(f"GARCH calculation skipped: {e}")
-            
-        outputs["garch"] = {
-            "buy_prob": 0.33, "sell_prob": 0.33, "hold_prob": 0.34,
-            "confidence": 0.70,
-            "expected_volatility": garch_vol,
-            "current_regime": "HIGH_RISK" if garch_vol > 0.0015 else "STABLE",
-            "reason_codes": ["GARCH_FORECAST_CALCULATED"]
-        }
+        outputs["garch"] = self.garch.predict(
+            price=price, returns=rets_arr, z_score=z_score, momentum=momentum, bb_pos=bb_pos, volatility=volatility
+        )
 
         # 4. Hidden Markov Model
-        hmm_regime = "LOW_VOL_BULLISH"
-        hmm_buy = 0.5
-        hmm_sell = 0.3
-        confidence = 0.50
-        try:
-            if len(rets_arr) >= 50:
-                states = self.hmm.predict_regime_states(rets_arr)
-                if len(states) > 0:
-                    current_state = int(states[-1])
-                    if current_state == 0:
-                        hmm_regime = "LOW_VOL_BULLISH"
-                        hmm_buy, hmm_sell = 0.7, 0.1
-                        confidence = 0.80
-                    else:
-                        hmm_regime = "HIGH_VOL_BEARISH"
-                        hmm_buy, hmm_sell = 0.1, 0.8
-                        confidence = 0.85
-        except Exception as e:
-            logger.debug(f"HMM prediction failed: {e}")
-
-        outputs["hmm"] = {
-            "buy_prob": hmm_buy,
-            "sell_prob": hmm_sell,
-            "hold_prob": 1.0 - (hmm_buy + hmm_sell),
-            "confidence": confidence,
-            "expected_volatility": volatility,
-            "current_regime": hmm_regime,
-            "reason_codes": [f"HMM_REGIME_{hmm_regime}"]
-        }
+        outputs["hmm"] = self.hmm.predict(
+            price=price, returns=rets_arr, z_score=z_score, momentum=momentum, bb_pos=bb_pos, volatility=volatility
+        )
 
         # 5. Z-Score Mean Reversion Detector
-        mr_buy, mr_sell = 0.1, 0.1
-        mr_regime = "NEUTRAL"
-        reasons = []
-        if z_score < -2.0:
-            mr_buy = 0.85
-            mr_regime = "OVERSOLD"
-            reasons.append("ZSCORE_OVERSOLD")
-        elif z_score > 2.0:
-            mr_sell = 0.85
-            mr_regime = "OVERBOUGHT"
-            reasons.append("ZSCORE_OVERBOUGHT")
-        else:
-            reasons.append("ZSCORE_NORMAL")
-            
-        outputs["z_score_mr"] = {
-            "buy_prob": mr_buy,
-            "sell_prob": mr_sell,
-            "hold_prob": 1.0 - (mr_buy + mr_sell),
-            "confidence": 0.80,
-            "expected_volatility": volatility,
-            "current_regime": mr_regime,
-            "reason_codes": reasons
-        }
+        outputs["z_score_mr"] = self.zscore_mr.predict(
+            price=price, returns=rets_arr, z_score=z_score, momentum=momentum, bb_pos=bb_pos, volatility=volatility
+        )
 
         # 6. Momentum/Trend Detector
-        mom_buy, mom_sell = 0.33, 0.33
-        mom_regime = "FLAT"
-        if momentum > 0.5:
-            mom_buy = 0.75
-            mom_sell = 0.05
-            mom_regime = "BULLISH_MOMENTUM"
-        elif momentum < -0.5:
-            mom_buy = 0.05
-            mom_sell = 0.75
-            mom_regime = "BEARISH_MOMENTUM"
-            
-        outputs["momentum"] = {
-            "buy_prob": mom_buy,
-            "sell_prob": mom_sell,
-            "hold_prob": 1.0 - (mom_buy + mom_sell),
-            "confidence": 0.70,
-            "expected_volatility": volatility,
-            "current_regime": mom_regime,
-            "reason_codes": [f"MOMENTUM_{mom_regime}"]
-        }
+        outputs["momentum"] = self.momentum_osc.predict(
+            price=price, returns=rets_arr, z_score=z_score, momentum=momentum, bb_pos=bb_pos, volatility=volatility
+        )
 
         # 7. Breakout Probability Model
-        bo_buy, bo_sell = 0.1, 0.1
-        bo_regime = "CONSOLIDATION"
-        reasons_bo = []
-        if bb_pos > 1.0:
-            bo_buy = 0.80
-            bo_regime = "BULLISH_BREAKOUT"
-            reasons_bo.append("BO_BB_UPPER_BREACH")
-        elif bb_pos < 0.0:
-            bo_sell = 0.80
-            bo_regime = "BEARISH_BREAKOUT"
-            reasons_bo.append("BO_BB_LOWER_BREACH")
-        else:
-            reasons_bo.append("BO_BB_NORMAL")
-            
-        outputs["breakout"] = {
-            "buy_prob": bo_buy,
-            "sell_prob": bo_sell,
-            "hold_prob": 1.0 - (bo_buy + bo_sell),
-            "confidence": 0.72,
-            "expected_volatility": volatility,
-            "current_regime": bo_regime,
-            "reason_codes": reasons_bo
-        }
+        outputs["breakout"] = self.breakout.predict(
+            price=price, returns=rets_arr, z_score=z_score, momentum=momentum, bb_pos=bb_pos, volatility=volatility
+        )
 
-        # 8. ML Ensemble Inference (RandomForest, ExtraTrees, GradientBoosting)
+        # 8. Bayesian Uncertainty Estimator
+        outputs["bayesian"] = self.bayesian.predict(
+            price=price, returns=rets_arr, z_score=z_score, momentum=momentum, bb_pos=bb_pos, volatility=volatility
+        )
+
+        # 9. Monte Carlo Path Simulator
+        outputs["monte_carlo"] = self.monte_carlo.predict(
+            price=price, returns=rets_arr, z_score=z_score, momentum=momentum, bb_pos=bb_pos, volatility=volatility
+        )
+
+        # 10. ML Ensemble Inference (RandomForest, ExtraTrees, GradientBoosting)
         ml_model = self.model_manager.get_active_model()
         ml_buy, ml_sell = 0.33, 0.33
         ml_conf = 0.50
@@ -228,13 +148,13 @@ class QuantIntelligenceEngine:
                 
                 if max_class == 2:
                     ml_regime = "ML_BULLISH"
-                    ml_reasons.append("ML_CONCENSUS_BUY")
+                    ml_reasons.append("ML_CONSENSUS_BUY")
                 elif max_class == 0:
                     ml_regime = "ML_BEARISH"
-                    ml_reasons.append("ML_CONCENSUS_SELL")
+                    ml_reasons.append("ML_CONSENSUS_SELL")
                 else:
                     ml_regime = "ML_NEUTRAL"
-                    ml_reasons.append("ML_CONCENSUS_HOLD")
+                    ml_reasons.append("ML_CONSENSUS_HOLD")
             except Exception as e:
                 logger.error(f"ML Model inference error: {e}")
                 ml_reasons.append("ML_INFERENCE_ERROR")
@@ -251,6 +171,7 @@ class QuantIntelligenceEngine:
             "hold_prob": 1.0 - (ml_buy + ml_sell),
             "confidence": ml_conf,
             "expected_volatility": volatility,
+            "expected_move": 0.0,
             "current_regime": ml_regime,
             "reason_codes": ml_reasons
         }

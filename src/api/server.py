@@ -315,6 +315,48 @@ async def run_historical_backtest(req: BacktestRequest, db: Session = Depends(ge
         "total_trades": results["total_trades"]
     }
 
+@app.get("/api/v1/market/candles")
+async def get_market_candles(timeframe: str = "1m", limit: int = 150, db: Session = Depends(get_db)):
+    """
+    Returns the most recent candles for a given timeframe (e.g., 1s, 5s, 15s, 1m, 5m, 15m, 1h, 4h, 1d).
+    Reads from Redis cache first and falls back to SQLite/PostgreSQL.
+    """
+    from src.data.redis_client import RedisClient
+    redis_client = RedisClient()
+    
+    # Try fetching from Redis first
+    cached_candles = redis_client.get_recent_candles("XAUUSD", timeframe, count=limit)
+    if cached_candles and len(cached_candles) > 0:
+        return cached_candles
+        
+    # Database fallback
+    try:
+        query = (
+            db.query(MarketData)
+            .filter_by(symbol="XAUUSD", timeframe=timeframe)
+            .order_by(MarketData.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+        # Reverse to return chronological order
+        query.reverse()
+        return [
+            {
+                "timestamp": q.timestamp.isoformat(),
+                "open": float(q.open),
+                "high": float(q.high),
+                "low": float(q.low),
+                "close": float(q.close),
+                "volume": float(q.volume),
+                "bid": float(q.bid) if q.bid else None,
+                "ask": float(q.ask) if q.ask else None
+            }
+            for q in query
+        ]
+    except Exception as e:
+        logger.error(f"Error fetching candles from DB: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch historical market data")
+
 @app.get("/api/v1/portfolio/summary")
 async def get_portfolio_summary(db: Session = Depends(get_db)):
     state = db.query(PortfolioState).order_by(PortfolioState.timestamp.desc()).first()

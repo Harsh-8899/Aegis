@@ -10,10 +10,28 @@ from src.data.database import SessionLocal, MarketData
 
 logger = logging.getLogger("RealTimeStreamer")
 
+TIMEFRAME_SECS = {
+    "1s": 1,
+    "5s": 5,
+    "15s": 15,
+    "1m": 60,
+    "5m": 300,
+    "15m": 900,
+    "1h": 3600,
+    "4h": 14400,
+    "1d": 86400
+}
+
+def align_timestamp(dt: datetime.datetime, duration_seconds: int) -> datetime.datetime:
+    epoch = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+    ts_seconds = int((dt - epoch).total_seconds())
+    aligned_seconds = (ts_seconds // duration_seconds) * duration_seconds
+    return epoch + datetime.timedelta(seconds=aligned_seconds)
+
 class RealTimeStreamer:
     """
     Simulates or streams live XAU/USD price updates every second.
-    Computes feed latency, detects stale data, missing ticks, and abnormal spikes.
+    Computes feed latency, detects stale data, missing ticks, spikes, duplicates, and API delay.
     Caches ticks/candles in Redis and aggregates historical candles in SQLite/PostgreSQL.
     """
     def __init__(self, symbol: str = "XAUUSD"):
@@ -40,8 +58,12 @@ class RealTimeStreamer:
             "stale": False,
             "missing_ticks": False,
             "abnormal_spike": False,
-            "api_delay": False
+            "api_delay": False,
+            "duplicate_ticks": False
         }
+
+        # Multi-timeframe active candles
+        self.current_candles = {tf: None for tf in TIMEFRAME_SECS}
 
     def start(self):
         """Starts the real-time streaming thread."""
@@ -135,8 +157,8 @@ class RealTimeStreamer:
                 # 4. Store tick in Redis
                 self.redis_client.store_tick(self.symbol, tick)
                 
-                # 5. Aggregate tick into 1-minute historical candles in DB
-                self._aggregate_candle_to_db(db, tick)
+                # 5. Aggregate tick into multiple historical timeframe candles
+                self._aggregate_all_timeframes(db, tick)
                 
                 self.last_tick = tick
                 self.last_tick_time = process_time
@@ -203,82 +225,95 @@ class RealTimeStreamer:
         else:
             self.status_flags["api_delay"] = False
 
-    def _aggregate_candle_to_db(self, db: Session, tick: Dict[str, Any]):
-        """
-        Aggregates tick price into the current minute candle in SQLite/PostgreSQL.
-        Writes and commits to the database only on minute rollover to prevent SQLite locks.
-        """
-        now = datetime.datetime.now(datetime.timezone.utc)
-        minute_ts = now.replace(second=0, microsecond=0)
+        # 5. Duplicate tick check
+        if self.last_tick and tick["price"] == self.last_tick["price"] and tick["timestamp"] == self.last_tick["timestamp"]:
+            self.status_flags["duplicate_ticks"] = True
+        else:
+            self.status_flags["duplicate_ticks"] = False
+
+    def _aggregate_all_timeframes(self, db: Session, tick: Dict[str, Any]):
+        now = datetime.datetime.fromisoformat(tick["timestamp"]) if isinstance(tick["timestamp"], str) else tick["timestamp"]
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=datetime.timezone.utc)
+
         price = tick["price"]
         bid = tick["bid"]
         ask = tick["ask"]
         volume = tick["volume"]
 
-        if not hasattr(self, 'current_candle'):
-            self.current_candle = None
+        for tf, duration in TIMEFRAME_SECS.items():
+            aligned_ts = align_timestamp(now, duration)
+            candle = self.current_candles.get(tf)
 
-        if self.current_candle is None:
-            self.current_candle = {
-                "timestamp": minute_ts,
-                "open": price,
-                "high": price,
-                "low": price,
-                "close": price,
-                "volume": volume,
-                "bid": bid,
-                "ask": ask
-            }
-        elif self.current_candle["timestamp"] == minute_ts:
-            self.current_candle["high"] = max(self.current_candle["high"], price)
-            self.current_candle["low"] = min(self.current_candle["low"], price)
-            self.current_candle["close"] = price
-            self.current_candle["volume"] += volume
-            self.current_candle["bid"] = bid
-            self.current_candle["ask"] = ask
-        else:
-            # Minute rolled over! Write completed candle to DB
-            completed = self.current_candle
-            try:
-                existing = db.query(MarketData).filter_by(
-                    symbol=self.symbol, timeframe="1m", timestamp=completed["timestamp"]
-                ).first()
-                if existing:
-                    existing.high = completed["high"]
-                    existing.low = completed["low"]
-                    existing.close = completed["close"]
-                    existing.volume = completed["volume"]
-                    existing.bid = completed["bid"]
-                    existing.ask = completed["ask"]
-                else:
-                    candle = MarketData(
-                        timestamp=completed["timestamp"],
-                        symbol=self.symbol,
-                        timeframe="1m",
-                        open=completed["open"],
-                        high=completed["high"],
-                        low=completed["low"],
-                        close=completed["close"],
-                        volume=completed["volume"],
-                        bid=completed["bid"],
-                        ask=completed["ask"]
-                    )
-                    db.add(candle)
-                db.commit()
-                logger.info(f"Aggregated 1-minute candle committed to DB for {completed['timestamp']}")
-            except Exception as e:
-                db.rollback()
-                logger.error(f"Error persisting aggregated candle on rollover: {e}")
-            
-            # Start new candle
-            self.current_candle = {
-                "timestamp": minute_ts,
-                "open": price,
-                "high": price,
-                "low": price,
-                "close": price,
-                "volume": volume,
-                "bid": bid,
-                "ask": ask
-            }
+            if candle is None:
+                self.current_candles[tf] = {
+                    "timestamp": aligned_ts,
+                    "open": price,
+                    "high": price,
+                    "low": price,
+                    "close": price,
+                    "volume": volume,
+                    "bid": bid,
+                    "ask": ask
+                }
+            elif candle["timestamp"] == aligned_ts:
+                # Update current active candle
+                candle["high"] = max(candle["high"], price)
+                candle["low"] = min(candle["low"], price)
+                candle["close"] = price
+                candle["volume"] += volume
+                candle["bid"] = bid
+                candle["ask"] = ask
+            else:
+                # Rollover! The period completed.
+                completed_candle = candle
+                
+                # 1. Cache the completed candle in Redis
+                self.redis_client.store_candle(self.symbol, tf, completed_candle)
+                
+                # 2. Persist to SQLite/PostgreSQL for timeframes 1m and above (to avoid heavy DB disk write locks on sub-minute)
+                if duration >= 60:
+                    try:
+                        existing = db.query(MarketData).filter_by(
+                            symbol=self.symbol, timeframe=tf, timestamp=completed_candle["timestamp"]
+                        ).first()
+                        if existing:
+                            existing.open = completed_candle["open"]
+                            existing.high = completed_candle["high"]
+                            existing.low = completed_candle["low"]
+                            existing.close = completed_candle["close"]
+                            existing.volume = completed_candle["volume"]
+                            existing.bid = completed_candle["bid"]
+                            existing.ask = completed_candle["ask"]
+                        else:
+                            new_db_candle = MarketData(
+                                timestamp=completed_candle["timestamp"],
+                                symbol=self.symbol,
+                                timeframe=tf,
+                                open=completed_candle["open"],
+                                high=completed_candle["high"],
+                                low=completed_candle["low"],
+                                close=completed_candle["close"],
+                                volume=completed_candle["volume"],
+                                bid=completed_candle["bid"],
+                                ask=completed_candle["ask"]
+                            )
+                            db.add(new_db_candle)
+                        db.commit()
+                        logger.info(f"Persisted aggregated {tf} candle for {completed_candle['timestamp']}")
+                    except Exception as e:
+                        db.rollback()
+                        logger.error(f"Error persisting {tf} candle: {e}")
+
+                # Start the next candle
+                self.current_candles[tf] = {
+                    "timestamp": aligned_ts,
+                    "open": price,
+                    "high": price,
+                    "low": price,
+                    "close": price,
+                    "volume": volume,
+                    "bid": bid,
+                    "ask": ask
+                }
 
