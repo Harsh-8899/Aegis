@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { FileText, Filter, Search, Terminal } from "lucide-react";
 
+import { WS_URL } from "@/utils/api";
+
 export default function AuditPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [filter, setFilter] = useState("all");
@@ -10,7 +12,7 @@ export default function AuditPage() {
 
   useEffect(() => {
     // Connect to WebSocket API
-    const ws = new WebSocket("ws://localhost:8000/api/v1/ws/dashboard");
+    const ws = new WebSocket(`${WS_URL}/api/v1/ws/dashboard`);
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);

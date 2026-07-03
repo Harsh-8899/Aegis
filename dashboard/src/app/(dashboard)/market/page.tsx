@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 import { Calendar, Flame, Gauge, Globe, MessageSquareQuote } from "lucide-react";
 
+import { WS_URL } from "@/utils/api";
+
 export default function MarketPage() {
   const [price, setPrice] = useState(2330.45);
   const [spread, setSpread] = useState(1.8);
@@ -12,7 +14,7 @@ export default function MarketPage() {
 
   // Connect to live WebSocket feed
   useEffect(() => {
-    const ws = new WebSocket("ws://localhost:8000/api/v1/ws/dashboard");
+    const ws = new WebSocket(`${WS_URL}/api/v1/ws/dashboard`);
     
     ws.onmessage = (event) => {
       try {

@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Sliders, Activity, ShieldCheck, TrendingUp, TrendingDown } from "lucide-react";
 
+import { API_URL, WS_URL } from "@/utils/api";
+
 export default function StrategiesPage() {
   const [strategies, setStrategies] = useState([
     { name: "Trend Following", id: "trend_following", status: "ACTIVE", signal: "BUY", winRate: "62.4%", profitFactor: "1.85", sharpe: "2.12", drawdown: "4.2%", allocation: 40 },
@@ -23,7 +25,7 @@ export default function StrategiesPage() {
     }
 
     // Connect to WebSocket API to stream recent positions/trades
-    const ws = new WebSocket("ws://localhost:8000/api/v1/ws/dashboard");
+    const ws = new WebSocket(`${WS_URL}/api/v1/ws/dashboard`);
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
@@ -54,7 +56,7 @@ export default function StrategiesPage() {
       }, {});
 
       const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:8000/api/v1/system/config", {
+      const response = await fetch(`${API_URL}/api/v1/system/config`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.config import load_config
-from src.data.database import get_db, init_db, Order, Position, PortfolioState, SystemAlert, TradeDirection, Strategy, OrderStatus, MarketData
+from src.data.database import get_db, init_db, Order, Position, PortfolioState, SystemAlert, TradeDirection, Strategy, OrderStatus, MarketData, UserFeedback
 from src.agents.ceo import CEOAgent
 from src.agents.execution import ExecutionAgent
 from src.risk.evaluator import RiskEvaluator
@@ -127,7 +127,15 @@ def require_roles(allowed_roles: List[str]):
         return current_user
     return dependency
 
+class UserFeedbackCreate(BaseModel):
+    username: str | None = None
+    email: str | None = None
+    category: str = Field(..., description="BUG, FEATURE, UIUX, or GENERAL")
+    rating: int = Field(..., ge=1, le=5, description="Rating from 1 to 5")
+    comment: str = Field(..., min_length=5, max_length=1000)
+
 # REST Endpoints
+
 
 @app.post("/api/v1/auth/login", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -682,4 +690,45 @@ def startup_populate():
     
     # Launch background live market datastream and quant intelligence engine
     asyncio.create_task(live_intelligence_loop())
+
+
+@app.post("/api/v1/system/feedback", status_code=status.HTTP_201_CREATED)
+def submit_feedback(feedback: UserFeedbackCreate, db: Session = Depends(get_db)):
+    try:
+        new_feedback = UserFeedback(
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+            username=feedback.username,
+            email=feedback.email,
+            category=feedback.category.upper(),
+            rating=feedback.rating,
+            comment=feedback.comment
+        )
+        db.add(new_feedback)
+        db.commit()
+        logger.info(f"Feedback submitted by {feedback.username or 'anonymous'}")
+        return {"status": "success", "message": "Feedback submitted successfully"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to submit feedback: {e}")
+        raise HTTPException(status_code=500, detail="Internal database error while saving feedback")
+
+@app.get("/api/v1/system/feedback")
+def get_all_feedback(db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_roles(["admin", "researcher"]))):
+    try:
+        feedbacks = db.query(UserFeedback).order_by(UserFeedback.timestamp.desc()).all()
+        return [
+            {
+                "id": fb.id,
+                "timestamp": fb.timestamp.isoformat() if fb.timestamp else None,
+                "username": fb.username,
+                "email": fb.email,
+                "category": fb.category,
+                "rating": fb.rating,
+                "comment": fb.comment
+            } for fb in feedbacks
+        ]
+    except Exception as e:
+        logger.error(f"Failed to fetch feedback list: {e}")
+        raise HTTPException(status_code=500, detail="Internal database error while fetching feedback")
+
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ArrowUpDown, ShieldCheck, ShieldAlert, Sparkles, X, Plus } from "lucide-react";
+import { API_URL, WS_URL } from "@/utils/api";
 
 export default function TradePage() {
   const [positions, setPositions] = useState<any[]>([]);
@@ -27,7 +28,7 @@ export default function TradePage() {
     }
 
     // Connect to WebSocket API
-    const ws = new WebSocket("ws://localhost:8000/api/v1/ws/dashboard");
+    const ws = new WebSocket(`${WS_URL}/api/v1/ws/dashboard`);
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
@@ -50,15 +51,15 @@ export default function TradePage() {
   const executeManualTrade = async () => {
     setConfirmOrder(false);
     
-    if (role === "viewer" || role === "researcher") {
-      alert("Permission Denied: Viewer and Researcher roles are restricted from executing live/paper orders.");
+    if (role === "viewer" || role === "trader" || role === "researcher") {
+      alert("Permission Denied: Operator and Viewer roles are restricted from placing manual orders in this environment.");
       return;
     }
 
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:8000/api/v1/execution/trade", {
+      const response = await fetch(`${API_URL}/api/v1/execution/trade`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -86,15 +87,15 @@ export default function TradePage() {
   };
 
   const handleClosePosition = async (id: string) => {
-    if (role === "viewer" || role === "researcher") {
-      alert("Permission Denied: Viewer and Researcher roles are restricted from executing trades.");
+    if (role === "viewer" || role === "trader" || role === "researcher") {
+      alert("Permission Denied: Operator and Viewer roles are restricted from executing close requests.");
       return;
     }
 
     if (confirm("Are you sure you want to close this position?")) {
       try {
         const token = localStorage.getItem("token");
-        const response = await fetch(`http://localhost:8000/api/v1/portfolio/positions/${id}/close`, {
+        const response = await fetch(`${API_URL}/api/v1/portfolio/positions/${id}/close`, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${token}`

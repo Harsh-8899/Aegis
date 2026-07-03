@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import FeedbackModal from "@/components/FeedbackModal";
 
 export default function DashboardLayout({
   children,
@@ -11,6 +12,7 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -20,6 +22,12 @@ export default function DashboardLayout({
       setIsAuthenticated(true);
     }
   }, [router]);
+
+  useEffect(() => {
+    const handleOpenFeedback = () => setIsFeedbackOpen(true);
+    window.addEventListener("open-feedback-modal", handleOpenFeedback);
+    return () => window.removeEventListener("open-feedback-modal", handleOpenFeedback);
+  }, []);
 
   if (!isAuthenticated) {
     // Show empty loader while validating authorization token
@@ -39,6 +47,7 @@ export default function DashboardLayout({
       <main className="flex-1 overflow-y-auto max-h-screen p-8">
         {children}
       </main>
+      <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
     </div>
   );
 }

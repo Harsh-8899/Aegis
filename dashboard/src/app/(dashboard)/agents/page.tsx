@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Play, Pause, RotateCw, FileText, CheckCircle2, ShieldAlert } from "lucide-react";
 
+import { WS_URL } from "@/utils/api";
+
 export default function AgentsPage() {
   const [agents, setAgents] = useState<any[]>([]);
   const [overrideModal, setOverrideModal] = useState<string | null>(null);
@@ -19,7 +21,7 @@ export default function AgentsPage() {
     }
 
     // Connect to WebSocket API
-    const ws = new WebSocket("ws://localhost:8000/api/v1/ws/dashboard");
+    const ws = new WebSocket(`${WS_URL}/api/v1/ws/dashboard`);
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);

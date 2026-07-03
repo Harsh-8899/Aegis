@@ -162,6 +162,17 @@ class SystemAlert(Base):
     severity = Column(String(10), nullable=False) # 'INFO', 'WARN', 'CRITICAL'
     message = Column(Text, nullable=False)
 
+class UserFeedback(Base):
+    __tablename__ = "user_feedback"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), default=datetime.datetime.utcnow, index=True)
+    username = Column(String(100), nullable=True)
+    email = Column(String(100), nullable=True)
+    category = Column(String(50), nullable=False)  # 'BUG', 'FEATURE', 'UIUX', 'GENERAL'
+    rating = Column(Integer, nullable=False)       # 1 to 5
+    comment = Column(Text, nullable=False)
+
 # Session helper dependency
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()

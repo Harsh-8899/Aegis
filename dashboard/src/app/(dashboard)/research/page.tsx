@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { FlaskConical, Play, Check, AlertCircle, FileText } from "lucide-react";
 
+import { API_URL } from "@/utils/api";
+
 export default function ResearchPage() {
   const [backtestDays, setBacktestDays] = useState(30);
   const [slippagePips, setSlippagePips] = useState(1.0);
@@ -30,7 +32,7 @@ export default function ResearchPage() {
     setResults(null);
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:8000/api/v1/research/backtest", {
+      const response = await fetch(`${API_URL}/api/v1/research/backtest`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

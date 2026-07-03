@@ -8,6 +8,8 @@ import {
   Percent, AlertTriangle, MessageSquareCode, Award
 } from "lucide-react";
 
+import { WS_URL } from "@/utils/api";
+
 export default function OverviewPage() {
   const [data, setData] = useState<any>({
     live_price: 2330.45,
@@ -36,7 +38,7 @@ export default function OverviewPage() {
   const [history, setHistory] = useState<any[]>([]);
 
   useEffect(() => {
-    const ws = new WebSocket("ws://localhost:8000/api/v1/ws/dashboard");
+    const ws = new WebSocket(`${WS_URL}/api/v1/ws/dashboard`);
     
     ws.onmessage = (event) => {
       try {

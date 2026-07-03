@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ShieldCheck, ShieldAlert, Skull, ToggleLeft } from "lucide-react";
+import { API_URL, WS_URL } from "@/utils/api";
 
 export default function RiskPage() {
   const [data, setData] = useState<any>({
@@ -10,8 +11,7 @@ export default function RiskPage() {
     drawdown: 0.0,
     alerts: []
   });
-
-  const [role, setRole] = useState("viewer");
+  const [role, setRole] = useState<string>("viewer");
 
   useEffect(() => {
     // Get user details
@@ -23,7 +23,7 @@ export default function RiskPage() {
     }
 
     // Connect to WebSocket API
-    const ws = new WebSocket("ws://localhost:8000/api/v1/ws/dashboard");
+    const ws = new WebSocket(`${WS_URL}/api/v1/ws/dashboard`);
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
@@ -42,7 +42,7 @@ export default function RiskPage() {
     if (confirm("CRITICAL WARNING: Are you absolutely sure you want to execute EMERGENCY KILLS SWITCH? This will instantly liquidate all open XAU/USD trades, cancel all pending orders, and lock down the platform!")) {
       try {
         const token = localStorage.getItem("token");
-        const response = await fetch("http://localhost:8000/api/v1/system/emergency-shutdown", {
+        const response = await fetch(`${API_URL}/api/v1/system/emergency-shutdown`, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${token}`

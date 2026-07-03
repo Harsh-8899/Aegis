@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { 
   LayoutDashboard, TrendingUp, Cpu, LineChart, 
   ShieldAlert, ArrowUpDown, FlaskConical, FileText, 
-  Settings, LogOut, Shield, ShieldCheck
+  Settings, LogOut, Shield, ShieldCheck, MessageSquare
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -73,6 +73,17 @@ export default function Sidebar() {
             </Link>
           );
         })}
+        <button
+          onClick={() => {
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("open-feedback-modal"));
+            }
+          }}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-[rgba(255,255,255,0.03)] transition-all"
+        >
+          <MessageSquare className="w-4 h-4 text-[#d4af37]" />
+          Submit Feedback
+        </button>
       </nav>
 
       {/* Mode Selector Info */}
