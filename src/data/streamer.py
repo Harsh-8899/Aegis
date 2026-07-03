@@ -58,6 +58,7 @@ class RealTimeStreamer:
         logger.info("Real-Time Streaming Engine stopped.")
 
     def _run_loop(self):
+        import yfinance as yf
         base_price = 2330.00
         db = SessionLocal()
         
@@ -70,29 +71,38 @@ class RealTimeStreamer:
         except Exception as e:
             logger.error(f"Warmup price query failed: {e}")
 
+        # Instantiate yfinance Ticker for live Gold futures prices
+        ticker = yf.Ticker("GC=F")
+
         while not self._stop_event.is_set():
             start_time = time.time()
             try:
-                # 1. Simulate tick update (or poll if API was WebSocket-enabled)
-                # Gold price random walk
-                change = random.normalvariate(0.0, 0.12)
-                # Keep gold price moves small & realistic for 1-second ticks
-                spot_price = round(base_price + change, 2)
+                # 1. Fetch live gold price from yfinance (GC=F)
+                spot_price = None
+                network_start = time.time()
+                try:
+                    info = ticker.fast_info
+                    if "lastPrice" in info:
+                        spot_price = round(float(info["lastPrice"]), 2)
+                    elif "last_price" in info:
+                        spot_price = round(float(info["last_price"]), 2)
+                except Exception as ex:
+                    logger.debug(f"yfinance live price fetch failed: {ex}")
+
+                # Fallback to random walk if yfinance is rate-limited or fails
+                if spot_price is None or spot_price <= 0:
+                    change = random.normalvariate(0.0, 0.12)
+                    spot_price = round(base_price + change, 2)
+                
+                # Calculate actual network latency in milliseconds
+                self.feed_latency_ms = round((time.time() - network_start) * 1000, 2)
                 base_price = spot_price  # update running base
                 
                 spread = round(random.uniform(0.12, 0.22), 2)  # 1.2 to 2.2 pips
                 bid = round(spot_price - spread / 2, 2)
                 ask = round(spot_price + spread / 2, 2)
                 
-                # Check for artificial spikes sometimes for testing
                 is_anomaly = False
-                if random.random() < 0.005:  # 0.5% chance to create spike
-                    spot_price = round(spot_price * (1.0 + random.choice([-0.015, 0.015])), 2)
-                    bid = round(spot_price - spread / 2, 2)
-                    ask = round(spot_price + spread / 2, 2)
-                    is_anomaly = True
-                    logger.warning(f"Artificially injected price spike: ${spot_price}")
-
                 now = datetime.datetime.now(datetime.timezone.utc)
                 
                 tick = {
@@ -106,11 +116,7 @@ class RealTimeStreamer:
                 }
 
                 # 2. Compute Latency
-                # Time diff between tick generation and current processing time
                 process_time = time.time()
-                # Simulate network network delay (80ms to 150ms)
-                simulated_network_delay = random.uniform(0.08, 0.15)
-                self.feed_latency_ms = round(simulated_network_delay * 1000, 2)
                 
                 # 3. Detect Anomalies
                 self._detect_anomalies(tick, is_anomaly)
